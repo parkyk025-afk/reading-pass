@@ -53,7 +53,32 @@ body {
   padding-right: max(16px, env(safe-area-inset-right, 0px));
   padding-block: 24px 56px;
 }
-.wrap { max-width: 1120px; margin: 0 auto; display: grid; gap: 18px; }
+.layout { max-width: 1480px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 20px; align-items: start; }
+.wrap { display: grid; gap: 18px; min-width: 0; }
+@media (max-width: 1320px) { .layout { grid-template-columns: minmax(0, 1fr); max-width: 1120px; } }
+
+/* 완성자 명단: 공항 도착 안내판 */
+.side { position: sticky; top: calc(16px + env(safe-area-inset-top, 0px)); min-width: 0; }
+@media (max-width: 1320px) { .side { position: static; } }
+.board { background: #121a2c; color: #f4ecd6; border-radius: 14px; overflow: hidden; border: 1px solid #2c3a5c; box-shadow: 0 14px 30px rgba(16, 24, 44, .25); }
+.board-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 10px; padding: 16px 16px 12px; background: #1b2a4a; border-bottom: 1px solid #2c3a5c; }
+.board-eyebrow { font-family: var(--serif); font-weight: 700; font-size: 12px; letter-spacing: .16em; color: #d1ad5c; }
+.board-count { font-family: var(--display); font-weight: 800; font-stretch: 75%; font-size: 34px; line-height: 1; color: #d1ad5c; font-variant-numeric: tabular-nums; }
+.board-count small { font-family: var(--body); font-size: 12px; font-weight: 700; color: #e9d6a6; margin-left: 4px; }
+.board-cols, .arr li { display: grid; grid-template-columns: 34px minmax(0, 1fr) minmax(0, 1.2fr) 44px; gap: 8px; align-items: center; }
+.board-cols { padding: 8px 16px; font-family: var(--mono); font-size: 10.5px; letter-spacing: .12em; color: #8f9bb3; border-bottom: 1px solid #2c3a5c; }
+.arr { list-style: none; margin: 0; padding: 4px 8px 8px; max-height: min(62vh, 560px); overflow-y: auto; }
+.arr li { padding: 8px; border-radius: 6px; font-family: var(--mono); font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.arr li:nth-child(odd) { background: rgba(255, 255, 255, .035); }
+.arr li .no { color: #d1ad5c; }
+.arr li .nm { font-family: var(--body); font-weight: 700; color: #ffffff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.arr li .dp { font-family: var(--body); font-size: 12px; font-weight: 500; color: #c9cfdc; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.arr li .dt { font-size: 11.5px; color: #8f9bb3; text-align: right; }
+.arr li.new { animation: flip .6s ease-out; }
+@keyframes flip { 0% { transform: rotateX(90deg); opacity: 0; } 100% { transform: none; opacity: 1; } }
+.board-msg { padding: 14px 16px; font-size: 13px; color: #c9cfdc; }
+.board-msg:empty { display: none; }
+.board-foot { padding: 10px 16px 14px; font-size: 11.5px; color: #8f9bb3; border-top: 1px solid #2c3a5c; }
 
 /* 여권 표지 */
 .cover {
@@ -297,6 +322,7 @@ input[type=text]:focus, textarea:focus { outline: none; border-color: var(--acce
 </svg>
 <canvas id="fx" aria-hidden="true"></canvas>
 <div class="celebrate" id="celebrate" hidden><div class="stack"><img class="cheer" id="cheer" src="bingo-cheer.png" alt="응원하는 삼육대 캐릭터 수야와 수호" width="640" height="328" hidden><div class="card" role="status"><div class="big">빙고 달성!</div><div class="small" id="celebrateSub"></div></div></div></div>
+<div class="layout">
 <div class="wrap">
   <header class="cover">
     <svg class="emblem" viewBox="0 0 80 80" aria-hidden="true">
@@ -378,6 +404,20 @@ input[type=text]:focus, textarea:focus { outline: none; border-color: var(--acce
     </div>
   </div>
   <div class="toast" id="toast" role="status"></div>
+</div>
+
+<aside class="side" aria-label="완성자 명단">
+  <div class="board">
+    <div class="board-head">
+      <div class="board-eyebrow">ARRIVALS · 완성자 명단</div>
+      <div class="board-count"><span id="arrCount">–</span><small>명 도착</small></div>
+    </div>
+    <div class="board-cols"><span>NO.</span><span>NAME</span><span>DEPT</span><span>DATE</span></div>
+    <ol class="arr" id="arrList"></ol>
+    <div class="board-msg" id="arrMsg">명단을 불러오는 중입니다.</div>
+    <div class="board-foot">이름 가운데 글자는 가려서 보여 줍니다. 1분마다 새로 고칩니다.</div>
+  </div>
+</aside>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
@@ -573,6 +613,37 @@ document.getElementById("formLink").addEventListener("click", e => {
   const miss = ["학과", "학번", "이름", "완성일"].filter((_, i) => !document.getElementById(CF[i]).value.trim());
   if (miss.length) { e.preventDefault(); toast(miss.join(", ") + "을(를) 입력해 주세요."); }
 });
+
+/* 완성자 명단: 설문지에 붙인 Apps Script 웹 앱 주소(…/exec). 학번은 보내지 않고 이름은 가려서 받음 */
+const COMPLETERS_URL = "";
+let arrSeen = null;
+async function loadCompleters() {
+  const list = document.getElementById("arrList"), msg = document.getElementById("arrMsg"), cnt = document.getElementById("arrCount");
+  if (!COMPLETERS_URL) { msg.textContent = "명단 연결을 준비하고 있습니다."; return; }
+  try {
+    const res = await fetch(COMPLETERS_URL, { cache: "no-store" });
+    if (!res.ok) throw new Error(res.status);
+    const data = await res.json();
+    const rows = Array.isArray(data.list) ? data.list : [];
+    cnt.textContent = rows.length;
+    list.textContent = "";
+    rows.forEach((r, i) => {
+      const li = document.createElement("li");
+      const key = (r.name || "") + "|" + (r.date || "") + "|" + (r.dept || "");
+      if (arrSeen && !arrSeen.has(key)) li.className = "new";
+      [["no", String(rows.length - i).padStart(2, "0")], ["nm", r.name || "-"], ["dp", r.dept || "-"], ["dt", (r.date || "").slice(5) || "-"]]
+        .forEach(([c, v]) => { const s = document.createElement("span"); s.className = c; s.textContent = v; li.appendChild(s); });
+      list.appendChild(li);
+    });
+    arrSeen = new Set(rows.map(r => (r.name || "") + "|" + (r.date || "") + "|" + (r.dept || "")));
+    msg.textContent = rows.length ? "" : "아직 완성자가 없습니다. 첫 번째 주인공이 되어 보세요!";
+  } catch (e) {
+    msg.textContent = window.claude ? "이 화면에서는 명단을 불러올 수 없습니다. 공개 주소에서 확인해 주세요." : "명단을 불러오지 못했습니다. 잠시 후 다시 시도합니다.";
+  }
+}
+loadCompleters();
+setInterval(loadCompleters, 60000);
+window.addEventListener("focus", loadCompleters);
 
 function celebrate(n, done) {
   const box = document.getElementById("celebrate"), card = box.querySelector(".card");

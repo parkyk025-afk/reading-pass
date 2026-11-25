@@ -354,7 +354,7 @@ input[type=text]:focus, textarea:focus { outline: none; border-color: var(--acce
     </div>
     <div class="bp-stub">
       <a class="bp-btn" id="formBtn" href="#" target="_blank" rel="noopener">완성 신고하기 <span aria-hidden="true">→</span></a>
-      <div class="bp-hint">구글 설문지로 제출</div>
+      <div class="bp-hint">누르면 도서관에 바로 접수</div>
     </div>
   </section>
 
@@ -376,7 +376,7 @@ input[type=text]:focus, textarea:focus { outline: none; border-color: var(--acce
       <div>
         <div class="claim-eyebrow">ALL 12 VISAS · 완성 신고</div>
         <h2>독서 여권을 완성했습니다</h2>
-        <p>아래 내용을 확인하고 구글 설문지로 제출하세요. 설문지에서 <b>'제출'까지 눌러야</b> 완성으로 인정됩니다.</p>
+        <p>아래 내용을 확인하고 <b>완성 신고하기</b>를 누르면 도서관에 바로 접수됩니다.</p>
       </div>
     </div>
     <div class="claim-body">
@@ -571,8 +571,15 @@ function refreshFormLink() {
   fb.href = url && done === 12 ? url : "#";
   document.getElementById("bpass").classList.toggle("ready", done === 12);
   document.getElementById("bpTitle").textContent = done === 12 ? "독서 여권 완성! 지금 완성 신고하세요" : "12칸 도장을 모두 받으면 완성 신고!";
-  document.getElementById("bpSub").textContent = done === 12 ? "12 / 12 · 설문지에서 '제출'까지 눌러야 인정됩니다" : `지금 ${done} / 12 · ${12 - done}칸 남음`;
-  if (url) { a.href = url; a.removeAttribute("aria-disabled"); note.textContent = "새 탭에서 설문지가 열립니다."; }
+  document.getElementById("bpSub").textContent = done === 12 ? (window.claude ? "12 / 12 · 설문지에서 '제출'까지 눌러야 인정됩니다" : "12 / 12 · 버튼을 누르면 바로 접수됩니다") : `지금 ${done} / 12 · ${12 - done}칸 남음`;
+  const ci = claimedInfo();
+  if (done === 12 && ci && ci.id === (student.id || "").trim()) {
+    document.getElementById("bpass").classList.remove("ready");
+    document.getElementById("bpTitle").textContent = "완성 신고 접수 완료!";
+    document.getElementById("bpSub").textContent = `${ci.name} · ${ci.id} · ${ci.at} 접수`;
+    fb.innerHTML = "신고 완료 ✓";
+  } else if (!claimBusy) { fb.innerHTML = '완성 신고하기 <span aria-hidden="true">→</span>'; }
+  if (url) { a.href = url; a.removeAttribute("aria-disabled"); note.textContent = window.claude ? "새 탭에서 설문지가 열립니다." : "누르면 바로 도서관에 접수됩니다."; a.textContent = window.claude ? "구글 설문지로 제출하기" : "완성 신고하기"; }
   else { a.href = "#"; a.setAttribute("aria-disabled", "true"); note.textContent = "설문지 주소가 아직 연결되지 않았습니다. 도서관에 문의해 주세요."; }
 }
 function updateClaim(done) {
@@ -592,14 +599,54 @@ document.getElementById("formBtn").addEventListener("click", e => {
   if (!FORM_PREFILL_URL) { e.preventDefault(); toast("설문지 주소가 아직 연결되지 않았습니다. 도서관에 문의해 주세요."); return; }
   if (done < 12) { e.preventDefault(); toast(`12칸을 모두 완성하면 신고할 수 있습니다. (지금 ${done}/12)`); return; }
   const miss = ["학과", "학번", "이름", "완성일"].filter((_, i) => !document.getElementById(CF[i]).value.trim());
-  if (miss.length) { e.preventDefault(); toast(miss.join(", ") + "을(를) 입력해 주세요."); }
+  if (miss.length) { e.preventDefault(); toast(miss.join(", ") + "을(를) 입력해 주세요."); return; }
+  sendClaim(e);
 });
 CF.forEach(id => document.getElementById(id).addEventListener("input", refreshFormLink));
 document.getElementById("formLink").addEventListener("click", e => {
   if (e.currentTarget.getAttribute("aria-disabled") === "true") { e.preventDefault(); return; }
   const miss = ["학과", "학번", "이름", "완성일"].filter((_, i) => !document.getElementById(CF[i]).value.trim());
-  if (miss.length) { e.preventDefault(); toast(miss.join(", ") + "을(를) 입력해 주세요."); }
+  if (miss.length) { e.preventDefault(); toast(miss.join(", ") + "을(를) 입력해 주세요."); return; }
+  sendClaim(e);
 });
+
+/* 완성 신고: 공개 주소에서는 설문지를 열지 않고 바로 접수(관리자 페이지에 쌓임). Claude 화면에서는 보안 제한으로 설문지 새 탭을 엶 */
+const CLAIM_KEY = "reading-pass-claimed-v1";
+function claimedInfo() { try { return JSON.parse(localStorage.getItem(CLAIM_KEY) || "null"); } catch (e) { return null; } }
+let claimBusy = false;
+async function sendClaim(e) {
+  if (window.claude) return;
+  e.preventDefault();
+  if (claimBusy) return;
+  const vals = CF.map(id => document.getElementById(id).value.trim());
+  const prev = claimedInfo();
+  if (prev && prev.id === vals[1]) { toast(`이미 ${prev.at}에 완성 신고가 접수되었습니다.`); return; }
+  let action, body;
+  try {
+    const u = new URL(FORM_PREFILL_URL);
+    const keys = [...u.searchParams.keys()].filter(k => k.startsWith("entry."));
+    body = new URLSearchParams();
+    keys.slice(0, 4).forEach((k, i) => body.append(k, vals[i] || ""));
+    action = u.origin + u.pathname.replace(/\/viewform$/, "/formResponse");
+  } catch (err) { toast("신고 주소가 올바르지 않습니다. 도서관에 문의해 주세요."); return; }
+  claimBusy = true;
+  const btns = [document.getElementById("formBtn"), document.getElementById("formLink")];
+  const old = btns.map(b => b.innerHTML);
+  btns.forEach(b => b.textContent = "접수하는 중…");
+  try {
+    await fetch(action, { method: "POST", mode: "no-cors", body });
+    const info = { id: vals[1], name: vals[2], dept: vals[0], at: today() };
+    try { localStorage.setItem(CLAIM_KEY, JSON.stringify(info)); } catch (err) {}
+    toast("완성 신고가 접수되었습니다. 축하합니다!");
+    FX.anchor = document.getElementById("formBtn"); fireworks();
+  } catch (err) {
+    toast("신고를 보내지 못했습니다. 인터넷 연결을 확인하고 다시 눌러 주세요.");
+  } finally {
+    claimBusy = false;
+    btns.forEach((b, i) => b.innerHTML = old[i]);
+    refreshFormLink();
+  }
+}
 
 /* 완성자 명단: 설문지에 붙인 Apps Script 웹 앱 주소(…/exec). 학번은 보내지 않고 이름은 가려서 받음 */
 const COMPLETERS_URL = "";

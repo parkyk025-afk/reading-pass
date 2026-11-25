@@ -53,7 +53,7 @@ body {
   padding-right: max(16px, env(safe-area-inset-right, 0px));
   padding-block: 24px 56px;
 }
-.layout { max-width: 1480px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 20px; align-items: start; }
+.layout { max-width: 1120px; margin: 0 auto; }
 .wrap { display: grid; gap: 18px; min-width: 0; }
 @media (max-width: 1320px) { .layout { grid-template-columns: minmax(0, 1fr); max-width: 1120px; } }
 
@@ -405,19 +405,6 @@ input[type=text]:focus, textarea:focus { outline: none; border-color: var(--acce
   </div>
   <div class="toast" id="toast" role="status"></div>
 </div>
-
-<aside class="side" aria-label="완성자 명단">
-  <div class="board">
-    <div class="board-head">
-      <div class="board-eyebrow">ARRIVALS · 완성자 명단</div>
-      <div class="board-count"><span id="arrCount">–</span><small>명 도착</small></div>
-    </div>
-    <div class="board-cols"><span>NO.</span><span>NAME</span><span>DEPT</span><span>DATE</span></div>
-    <ol class="arr" id="arrList"></ol>
-    <div class="board-msg" id="arrMsg">명단을 불러오는 중입니다.</div>
-    <div class="board-foot">이름 가운데 글자는 가려서 보여 줍니다. 1분마다 새로 고칩니다.</div>
-  </div>
-</aside>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
@@ -641,9 +628,6 @@ async function loadCompleters() {
     msg.textContent = window.claude ? "이 화면에서는 명단을 불러올 수 없습니다. 공개 주소에서 확인해 주세요." : "명단을 불러오지 못했습니다. 잠시 후 다시 시도합니다.";
   }
 }
-loadCompleters();
-setInterval(loadCompleters, 60000);
-window.addEventListener("focus", loadCompleters);
 
 function celebrate(n, done) {
   const box = document.getElementById("celebrate"), card = box.querySelector(".card");
